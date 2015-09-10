@@ -29,7 +29,7 @@
 module powerbi.visuals.sampleDataViews {
     import DataViewTransform = powerbi.data.DataViewTransform;
     
-    export class SimpleGaugeData extends SampleDataViews implements ISampleDataViewsMethods {
+    export class SimpleGaugeData extends SampleDataViews {
 
         public name: string = "SimpleGaugeData";
         public displayName: string = "Simple gauge data";

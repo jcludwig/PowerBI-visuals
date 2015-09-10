@@ -29,7 +29,7 @@
 module powerbi.visuals.sampleDataViews {
     import DataViewTransform = powerbi.data.DataViewTransform;
     
-    export class SalesByDayOfWeekData extends SampleDataViews implements ISampleDataViewsMethods {
+    export class SalesByDayOfWeekData extends SampleDataViews {
 
         public name: string = "SalesByDayOfWeekData";
         public displayName: string = "Sales by day of week";

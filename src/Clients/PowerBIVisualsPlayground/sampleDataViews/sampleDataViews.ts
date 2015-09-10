@@ -29,9 +29,13 @@
 module powerbi.visuals.sampleDataViews {
 
     export interface ISampleDataViews {
-        name: string;
-        displayName: string; 
-        visuals: string[];
+        getName(): string;
+        getDisplayName(): string;
+        hasPlugin(pluginName: string): boolean;
+        getDataViews(): DataView[];
+        randomize(): void;
+        getRandomValue(min: number, max: number): number;
+        randomElement(arr: any[]): any;
     }
 
     export class SampleDataViews implements ISampleDataViews {
@@ -59,12 +63,12 @@ module powerbi.visuals.sampleDataViews {
         public randomElement(arr: any[]) {
             return arr[Math.floor(Math.random() * arr.length)];
         }
-    }
 
-    export interface ISampleDataViewsMethods extends ISampleDataViews {
-        getDataViews(): DataView[];
-        randomize(): void;
-        getRandomValue(min: number, max: number): number;
-        randomElement(arr: any[]): any;
+        public getDataViews(): DataView[] {
+            return [];
+        }
+
+        public randomize() {
+        }
     }
 }

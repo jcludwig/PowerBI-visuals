@@ -29,7 +29,7 @@
 module powerbi.visuals.sampleDataViews {
     import DataViewTransform = powerbi.data.DataViewTransform;
     
-    export class TeamScoreData extends SampleDataViews implements ISampleDataViewsMethods {
+    export class TeamScoreData extends SampleDataViews {
 
         public name: string = "TeamScoreData";
         public displayName: string = "Team score data";

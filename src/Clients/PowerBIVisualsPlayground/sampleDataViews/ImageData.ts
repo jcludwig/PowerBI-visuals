@@ -28,7 +28,7 @@
 
 module powerbi.visuals.sampleDataViews {
     
-    export class ImageData extends SampleDataViews implements ISampleDataViewsMethods {
+    export class ImageData extends SampleDataViews {
 
         public name: string = "ImageData";
         public displayName: string = "Image data";

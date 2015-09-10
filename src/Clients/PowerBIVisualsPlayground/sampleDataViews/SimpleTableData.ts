@@ -30,7 +30,7 @@ module powerbi.visuals.sampleDataViews {
     import ValueType = powerbi.ValueType;
     import PrimitiveType = powerbi.PrimitiveType;
     
-    export class SimpleTableData extends SampleDataViews implements ISampleDataViewsMethods {
+    export class SimpleTableData extends SampleDataViews {
 
         public name: string = "SimpleTableData";
         public displayName: string = "Simple table data";

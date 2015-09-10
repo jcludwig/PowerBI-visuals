@@ -40,12 +40,14 @@ module powerbi.visuals {
         private dataViewsSelect: JQuery;
 
         /** Represents sample data views used by visualization elements.*/
-        private sampleDataViews;
+        private sampleDataViews: sampleDataViews.ISampleDataViews;
         private animation_duration: number = 250;
         private suppressAnimations: boolean = false;
 
         private suppressAnimationsElement: JQuery;
         private animationDurationElement: JQuery;
+        private importFilePickerElement: JQuery;
+        private importElement: JQuery;
         
         private viewport: IViewport;
         private container: JQuery;
@@ -62,9 +64,35 @@ module powerbi.visuals {
 
             this.suppressAnimationsElement = parent.find('input[name=suppressAnimations]').first();
             this.suppressAnimationsElement.on('change', () => this.onChangeSuppressAnimations());
-            
+
             this.animationDurationElement = parent.find('input[name=animation_duration]').first();
             this.animationDurationElement.on('change', () => this.onChangeDuration());
+
+            this.importFilePickerElement = $('#importCsvInput');
+            this.importFilePickerElement.on('change', () => this.validateFileType());
+
+            this.importElement = $('#importCsv');
+            this.importElement.click(() => this.importFile());
+        }
+
+        private getFiles(): any[] {
+            return (<any>this.importFilePickerElement.get(0)).files;
+        }
+
+        private validateFileType(): void {
+            let files = this.getFiles();
+            let enabled = files && files.length > 0 && /[.]csv$/.test(<string>files[0].name);
+            this.importElement.prop('disabled', !enabled);
+        }
+
+        private importFile(): void {
+            let file = this.getFiles()[0];
+            let reader = new FileReader();
+            reader.onload = (e) => {
+                this.sampleDataViews = new powerbi.visuals.sampleDataViews.CsvData(file.name, reader.result);
+                this.onChange();
+            };
+            reader.readAsText(file);
         }
 
         public setElement(container: JQuery): void {

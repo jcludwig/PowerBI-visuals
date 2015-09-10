@@ -9,6 +9,7 @@
     <script type="text/javascript" src="externals.min.js"></script>  
     <script type="text/javascript" src="powerbi-visuals.js"></script>    
     <script type="text/javascript" src ="PowerBIVisualsPlayground.js"></script>
+    <script type="text/javascript" src="http://jquery-csv.googlecode.com/git/src/jquery.csv.js"></script>
     
 </head>
 <body>
@@ -17,8 +18,14 @@
         <ul id="options-list">
             <li>
                 <span>DataView:</span>
-                <select id="dataViewsSelect"></select>
-                <button id="randomize">Randomize</button>
+                <div>
+                    <select id="dataViewsSelect"></select>
+                    <button id="randomize">Randomize</button>
+                </div>
+                <div>
+                    <input type="file" id="importCsvInput" />
+                    <button id="importCsv" disabled>Import</button>
+                </div>
             </li>
             <li>
                 <span>Animations:</span>

@@ -29,7 +29,7 @@
 module powerbi.visuals.sampleDataViews {
     import DataViewTransform = powerbi.data.DataViewTransform;
 
-    export class SalesByCountryData extends SampleDataViews implements ISampleDataViewsMethods {
+    export class SalesByCountryData extends SampleDataViews {
 
         public name: string = "SalesByCountryData";
         public displayName: string = "Sales By Country";

@@ -29,7 +29,7 @@
 module powerbi.visuals.sampleDataViews {
     import DataViewTransform = powerbi.data.DataViewTransform;
 
-    export class SimpleFunnelData extends SampleDataViews implements ISampleDataViewsMethods {
+    export class SimpleFunnelData extends SampleDataViews {
 
         public name: string = "SimpleFunnelData";
         public displayName: string = "Simple funnel data";

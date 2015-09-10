@@ -28,7 +28,7 @@
 
 module powerbi.visuals.sampleDataViews {
 
-    export class RichtextData extends SampleDataViews implements ISampleDataViewsMethods {
+    export class RichtextData extends SampleDataViews {
 
         public name: string = "RichtextData";
         public displayName: string = "Richtext data";

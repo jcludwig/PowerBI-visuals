@@ -32,7 +32,7 @@ module powerbi.visuals.sampleData {
     
     export class SampleData {
 
-        private static data = [
+        private static data: sampleDataViews.ISampleDataViews[] = [
             new sampleDataViews.FileStorageData(),
             new sampleDataViews.ImageData(),
             new sampleDataViews.RichtextData(),
@@ -48,7 +48,7 @@ module powerbi.visuals.sampleData {
         /**
          * Returns sample data view for a visualization element specified.
          */
-        public static getSamplesByPluginName(pluginName: string) {
+        public static getSamplesByPluginName(pluginName: string): sampleDataViews.ISampleDataViews[] {
 
             let samples = this.data.filter((item) => item.hasPlugin(pluginName));
 
@@ -62,7 +62,7 @@ module powerbi.visuals.sampleData {
         /**
          * Returns sampleDataView Instance for a visualization element specified.
          */
-        public static getDataViewsBySampleName(sampleName: string) {
+        public static getDataViewsBySampleName(sampleName: string): sampleDataViews.ISampleDataViews {
             return this.data.filter((item) => (item.getName() === sampleName))[0];
         } 
     }     

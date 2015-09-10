@@ -31,7 +31,7 @@ module powerbi.visuals.sampleDataViews {
     import ValueType = powerbi.ValueType;
     import PrimitiveType = powerbi.PrimitiveType;
     
-    export class FileStorageData extends SampleDataViews implements ISampleDataViewsMethods {
+    export class FileStorageData extends SampleDataViews {
 
         public name: string = "FileStorageData";
         public displayName: string = "File storage data";

@@ -3,77 +3,87 @@
 module powerbi.visuals.experimental {
     import RgbColor = jsCommon.color.RgbColor;
 
-    export module ScatterPrototype {
-        export interface ScatterDataPointModel {
-            x: number;
-            y: number;
-            size: number;
-            color: RgbColor;
-            selected: boolean;
-            identity: SelectionId;
-            //categoryValue: string;
+    export module scatter {
+
+        module models {
+            export interface ScatterDataPoint {
+                x: number;
+                y: number;
+                size: number;
+                color: RgbColor;
+                selected: boolean;
+                identity: SelectionId;
+                //categoryValue: string;
+            }
+
+            export interface ScatterData {
+                dataPoints: ScatterDataPoint[];
+                sizeRange: NumberRange;
+                xDomain: Domain;
+                yDomain: Domain;
+                hasSelection: boolean;
+            }
         }
 
-        export interface ScatterDataPointViewModel {
-            x: number;
-            y: number;
-            radius: number;
-            fill: RgbColor;
-            //stroke: RgbColor;   // TODO: We need an RgbaColor structure
-            alpha: number;
-            key: string;
-        }
+        module viewModels {
+            export interface ScatterDataPoint {
+                x: number;
+                y: number;
+                radius: number;
+                fill: RgbColor;
+                //stroke: RgbColor;   // TODO: We need an RgbaColor structure
+                alpha: number;
+                key: string;
+            }
 
-        export interface ScatterViewModel {
-            dataPoints: ScatterDataPointViewModel[];
-            boundingBox: BoundingBox;
-        }
-
-        export interface ScatterDataModel {
-            dataPoints: ScatterDataPointModel[];
-            sizeRange: NumberRange;
-            xDomain: Domain;
-            yDomain: Domain;
-            hasSelection: boolean;
+            export interface ScatterViewModel {
+                dataPoints: ScatterDataPoint[];
+                boundingBox: BoundingBox;
+            }
         }
 
         export class ScatterVisual implements IVisualComponent {
-            private initOptions: VisualInitOptions;
-            private legend: Legend;
-            private axes: CartesianAxes;
+            private cartesianChart: cartesian.CartesianChart;
 
-            private dataModel: ScatterDataModel;
-            private renderer: IRenderer;
-            
-            public init(options: VisualInitOptions) {
-                this.initOptions = options;
+            constructor() {
+                this.cartesianChart = new cartesian.CartesianChart([
+                    new ScatterLayer()
+                ]);
+            }
 
-                this.renderer = this.getRenderer(options.preferredRenderer, options.rendererFactory);
+            public init(options: VisualInitOptions): void {
+                this.cartesianChart.init(options);
+            }
 
-                this.legend = new Legend();
-                this.legend.init(options);
-
-                this.axes = new CartesianAxes();
+            public setData(dataViews: DataView[]): void {
+                this.cartesianChart.setData(dataViews);
             }
 
             public layout(boundingBox: BoundingBox): SceneGraphNode {
-                // ---- Layout ----
-                let layoutManager = new DockLayoutManager(boundingBox);
+                return this.cartesianChart.layout(boundingBox);
+            }
+        }
 
-                let legendPosition = DockPosition.Left;  // TODO: get position from legend?
-                let legendBoundingBox = layoutManager.measure(this.legend, legendPosition);
-                let axesBoundingBox = layoutManager.measure(this.axes, DockPosition.Fill);
+        export class ScatterLayer implements cartesian.ICartesianLayer {
+            private initOptions: cartesian.CartesianLayerInitOptions;
+            private dataModel: models.ScatterData;
+            private renderer: IRenderer;
 
-                // ---- Build Scene Graph ----
+            constructor() {
+            }
+
+            public init(options: cartesian.CartesianLayerInitOptions) {
+                this.initOptions = options;
+
+                this.renderer = this.getRenderer(options.preferredRenderer, options.rendererFactory);
+            }
+
+            public layout(boundingBox: BoundingBox, axes: cartesian.ICartesianAxes): SceneGraphNode {
                 let sceneNode = new SceneGraphNode();
-
-                sceneNode.add(this.legend.layout(legendBoundingBox));
-                sceneNode.add(this.axes.layout(axesBoundingBox, this.dataModel.xDomain, this.dataModel.yDomain));
 
                 // NOTE: requires axes be laid out first
                 // Another option is to separate out the plot area
-                let plotArea = this.axes.getPlotArea();
-                let viewModel = this.buildViewModel(this.dataModel, plotArea);
+                let viewModel = this.buildViewModel(this.dataModel, axes, boundingBox);
                 sceneNode.render = () => this.renderer.render(viewModel);
                 
                 return sceneNode;
@@ -82,30 +92,28 @@ module powerbi.visuals.experimental {
             private getRenderer(type: RendererType, factory: RendererFactory): IRenderer {
                 switch (type) {
                     case RendererType.SVG:
-                        return new ScatterSvgRenderer(<SvgRenderer>factory.getRenderer(RendererType.SVG));
+                        return new renderers.ScatterSvgRenderer(<SvgRenderer>factory.getRenderer(RendererType.SVG));
                     case RendererType.Canvas:
-                        return new ScatterCanvasRenderer(<CanvasRenderer>factory.getRenderer(RendererType.Canvas));
+                        return new renderers.ScatterCanvasRenderer(<CanvasRenderer>factory.getRenderer(RendererType.Canvas));
                     case RendererType.WebGL:
                         //return new ScatterMinimalWebGLRenderer(<MinimalWebGLRenderer>renderer);
-                        return new ScatterTextureWebGLRenderer(<MinimalWebGLRenderer>factory.getRenderer(RendererType.WebGL));
+                        return new renderers.ScatterTextureWebGLRenderer(<MinimalWebGLRenderer>factory.getRenderer(RendererType.WebGL));
                     case RendererType.TwoJS:
-                        return new ScatterTwoWebGLRenderer(<TwoWebGLRenderer>factory.getRenderer(RendererType.TwoJS));
+                        return new renderers.ScatterTwoWebGLRenderer(<TwoWebGLRenderer>factory.getRenderer(RendererType.TwoJS));
                     case RendererType.PIXI:
-                        return new ScatterPixiWebGLRenderer(<PixiWebGLRenderer>factory.getRenderer(RendererType.PIXI));
+                        return new renderers.ScatterPixiWebGLRenderer(<PixiWebGLRenderer>factory.getRenderer(RendererType.PIXI));
                 }
-
-                return null;
             }
 
-            public buildViewModel(model: ScatterDataModel, boundingBox: BoundingBox): ScatterViewModel {
-                let dataPoints: ScatterDataPointViewModel[] = [];
+            private buildViewModel(model: models.ScatterData, axes: cartesian.ICartesianAxes, boundingBox: BoundingBox): viewModels.ScatterViewModel {
+                let dataPoints: viewModels.ScatterDataPoint[] = [];
 
                 // TODO: may need other axes properties. like what?
-                let xScale = this.axes.xScale;
-                let yScale = this.axes.yScale;
+                let xScale = axes.xScale;
+                let yScale = axes.y1Scale;
 
                 for (let dataPoint of model.dataPoints) {
-                    dataPoints.push(<ScatterDataPointViewModel> {
+                    dataPoints.push(<viewModels.ScatterDataPoint> {
                         x: boundingBox.left + xScale(dataPoint.x),
                         y: boundingBox.top + yScale(dataPoint.y),
                         fill: dataPoint.color,
@@ -121,398 +129,404 @@ module powerbi.visuals.experimental {
                 };
             }
 
-            public setData(dataView: DataView) {
-                this.buildDataModel(dataView, this.initOptions.style.colorPalette.dataColors);
-
-                this.legend.convert(dataView, this.initOptions.style.colorPalette.dataColors, "", null);
-                this.axes.convert(dataView);
+            public setData(dataViews: DataView[]) {
+                this.buildDataModel(dataViews, this.initOptions.style.colorPalette.dataColors);
             }
 
-            private buildDataModel(dataView: DataView, colorPalette: IDataColorPalette, defaultDataPointColor?: string): void {
-                this.dataModel = new ScatterChartDataConverter(dataView).convert(colorPalette, defaultDataPointColor);
+            private buildDataModel(dataViews: DataView[], colorPalette: IDataColorPalette, defaultDataPointColor?: string): void {
+                this.dataModel = new ScatterChartDataConverter(dataViews).convert(colorPalette, defaultDataPointColor);
             }
         }
 
-        class ScatterSvgRenderer {
-            private renderer: SvgRenderer;
+        module renderers {
+            import ScatterDataPoint = viewModels.ScatterDataPoint;
+            import ScatterViewModel = viewModels.ScatterViewModel;
 
-            constructor(renderer: SvgRenderer) {
-                this.renderer = renderer;
+            module selectors {
+                import createClassAndSelector = jsCommon.CssConstants.createClassAndSelector;
+                export let scatterChart = createClassAndSelector('scatterChart');
             }
 
-            public render(viewModel: ScatterViewModel) {
-                let svg = this.renderer.getElement();
+            export class ScatterSvgRenderer {
+                private renderer: SvgRenderer;
 
-                let plot = svg.select('.plot');
-
-                if (plot.size() === 0) {
-                    plot = svg.append('g').classed('plot', true);
+                constructor(renderer: SvgRenderer) {
+                    this.renderer = renderer;
                 }
 
-                let bbox = viewModel.boundingBox;
-                plot.style('transform', SVGUtil.translate(bbox.left, bbox.top));
+                public render(viewModel: viewModels.ScatterViewModel) {
+                    let svg = this.renderer.getElement(selectors.scatterChart);
 
-                let selection = plot.selectAll('.dataPoint').data(viewModel.dataPoints, (d) => d.key);
-                selection.enter()
-                    .append('circle')
-                    .classed('dataPoint', true);
+                    let plot = svg.select('.plot');
 
-                selection.attr({
-                    'cx': (d: ScatterDataPointViewModel) => d.x,
-                    'cy': (d: ScatterDataPointViewModel) => d.y,
-                    'fill': (d: ScatterDataPointViewModel) => jsCommon.color.rgbWithAlphaString(d.fill, d.alpha),
-                    'stroke': 'black',
-                    'stroke-width': 1,
-                    'r': (d: ScatterDataPointViewModel) => d.radius,
-                });
+                    if (plot.size() === 0) {
+                        plot = svg.append('g').classed('plot', true);
+                    }
 
-                selection.exit();
+                    let bbox = viewModel.boundingBox;
+                    plot.style('transform', SVGUtil.translate(bbox.left, bbox.top));
 
-                DebugHelper.drawSvgRect(svg, bbox, '#00ff00', "plot");
+                    let selection = plot.selectAll('.dataPoint').data(viewModel.dataPoints, (d) => d.key);
+                    selection.enter()
+                        .append('circle')
+                        .classed('dataPoint', true);
+
+                    selection.attr({
+                        'cx': (d: ScatterDataPoint) => d.x,
+                        'cy': (d: ScatterDataPoint) => d.y,
+                        'fill': (d: ScatterDataPoint) => jsCommon.color.rgbWithAlphaString(d.fill, d.alpha),
+                        'stroke': 'black',
+                        'stroke-width': 1,
+                        'r': (d: ScatterDataPoint) => d.radius,
+                    });
+
+                    selection.exit();
+
+                    DebugHelper.drawSvgRect(svg, bbox, '#00ff00', "plot");
+                }
             }
-        }
 
-        class ScatterCanvasRenderer {
-            private renderer: CanvasRenderer;
+            export class ScatterCanvasRenderer {
+                private renderer: CanvasRenderer;
 
-            constructor(renderer: CanvasRenderer) {
-                this.renderer = renderer;
-            }
-
-            public render(viewModel: ScatterViewModel) {
-                let canvas = this.renderer.getCanvasContext();
-                let bbox = viewModel.boundingBox;
-                
-                for (let point of viewModel.dataPoints) {
-                    canvas.beginPath();
-                    canvas.arc(
-                        point.x,
-                        point.y,
-                        point.radius,
-                        0,
-                        2 * Math.PI,
-                        false);
-                    canvas.closePath();
-
-                    let fill = jsCommon.color.rgbWithAlphaString(point.fill, point.alpha);
-                    canvas.fillStyle = fill;
-                    canvas.fill();
-
-                    
-                    canvas.lineWidth = 1;
-                    canvas.strokeStyle = 'black';
-                    canvas.stroke();
+                constructor(renderer: CanvasRenderer) {
+                    this.renderer = renderer;
                 }
 
-                DebugHelper.drawCanvasRect(canvas, bbox, '#00ff00', "plot");
+                public render(viewModel: ScatterViewModel) {
+                    let canvas = this.renderer.getCanvasContext();
+                    let bbox = viewModel.boundingBox;
+
+                    for (let point of viewModel.dataPoints) {
+                        canvas.beginPath();
+                        canvas.arc(
+                            point.x,
+                            point.y,
+                            point.radius,
+                            0,
+                            2 * Math.PI,
+                            false);
+                        canvas.closePath();
+
+                        let fill = jsCommon.color.rgbWithAlphaString(point.fill, point.alpha);
+                        canvas.fillStyle = fill;
+                        canvas.fill();
+
+                        canvas.lineWidth = 1;
+                        canvas.strokeStyle = 'black';
+                        canvas.stroke();
+                    }
+
+                    DebugHelper.drawCanvasRect(canvas, bbox, '#00ff00', "plot");
+                }
             }
-        }
 
-        class ScatterTwoWebGLRenderer {
-            private renderer: TwoWebGLRenderer;
+            export class ScatterTwoWebGLRenderer {
+                private renderer: TwoWebGLRenderer;
 
-            constructor(renderer: TwoWebGLRenderer) {
-                this.renderer = renderer;
-            }
-
-            public render(viewModel: ScatterViewModel) {
-                let graphics: any = this.renderer.createGraphics();
-                let bbox = viewModel.boundingBox;
-
-                graphics.clear();
-                for (let point of viewModel.dataPoints) {
-                    let circle = graphics.makeCircle(
-                        point.x,
-                        point.y,
-                        point.radius);
-
-                    circle.fill = jsCommon.color.rgbString(point.fill);
-                    circle.opacity = point.alpha;
-                    circle.stroke = "black";
-                    circle.linewidth = 1;
-
-                    graphics.scene.add(circle);
+                constructor(renderer: TwoWebGLRenderer) {
+                    this.renderer = renderer;
                 }
 
-                let rect = graphics.makeRectangle(bbox.left, bbox.top, bbox.width, bbox.height);
-                rect.fill = "#00ff00";
-                rect.opacity = 0.2;
-                rect.noStroke();
-            }
-        }
+                public render(viewModel: ScatterViewModel) {
+                    let graphics: any = this.renderer.createGraphics();
+                    let bbox = viewModel.boundingBox;
 
-        class ScatterMinimalWebGLRenderer {
-            private viewModel: ScatterViewModel;
+                    graphics.clear();
+                    for (let point of viewModel.dataPoints) {
+                        let circle = graphics.makeCircle(
+                            point.x,
+                            point.y,
+                            point.radius);
 
-            private vertexShader: WebGL.DefaultVertexShader;
-            private vertexBuffer: WebGLBuffer;
-            private colorBuffer: WebGLBuffer;
-            private fragmentShader: WebGL.DefaultFragmentShader;
-            private program: WebGLProgram;
-            private gl: WebGLRenderingContext;
-            private renderer: MinimalWebGLRenderer;
+                        circle.fill = jsCommon.color.rgbString(point.fill);
+                        circle.opacity = point.alpha;
+                        circle.stroke = "black";
+                        circle.linewidth = 1;
 
-            private resolution: number = 8;
-            private circleTemplate = this.makeCircleTemplate();
+                        graphics.scene.add(circle);
+                    }
 
-            constructor(renderer: MinimalWebGLRenderer) {
-                this.renderer = renderer;
-                this.gl = renderer.getGL();
-
-                this.vertexShader = new WebGL.DefaultVertexShader();
-                this.fragmentShader = new WebGL.DefaultFragmentShader();
-                this.program = renderer.buildProgram(this.vertexShader, this.fragmentShader);
+                    let rect = graphics.makeRectangle(bbox.left, bbox.top, bbox.width, bbox.height);
+                    rect.fill = "#00ff00";
+                    rect.opacity = 0.2;
+                    rect.noStroke();
+                }
             }
 
-            public render(viewModel: ScatterViewModel) {
-                this.setViewModel(viewModel);
-                this.draw();
-            }
+            export class ScatterMinimalWebGLRenderer {
+                private viewModel: ScatterViewModel;
 
-            public setViewModel(viewModel: ScatterViewModel) {
-                this.viewModel = viewModel;
-                let gl = this.gl;
+                private vertexShader: WebGL.DefaultVertexShader;
+                private vertexBuffer: WebGLBuffer;
+                private colorBuffer: WebGLBuffer;
+                private fragmentShader: WebGL.DefaultFragmentShader;
+                private program: WebGLProgram;
+                private gl: WebGLRenderingContext;
+                private renderer: MinimalWebGLRenderer;
 
-                let vertices = [];
-                let colors = [];
-                for (let p of viewModel.dataPoints) {
-                    this.makeCircle(p.x, p.y, p.radius, vertices);
+                private resolution: number = 8;
+                private circleTemplate = this.makeCircleTemplate();
 
-                    // TODO: index buffer for colors?
-                    let r = Math.random(), g = Math.random(), b = Math.random();
-                    for (let i = 0; i < this.resolution * 3; i++) {
-                        colors.push(r, g, b, 1.0);
-                        //colors.push(p.fill.R / 255.0, p.fill.G / 255.0, p.fill.B / 255.0, p.alpha);
+                constructor(renderer: MinimalWebGLRenderer) {
+                    this.renderer = renderer;
+                    this.gl = renderer.getGL();
+
+                    this.vertexShader = new WebGL.DefaultVertexShader();
+                    this.fragmentShader = new WebGL.DefaultFragmentShader();
+                    this.program = renderer.buildProgram(this.vertexShader, this.fragmentShader);
+                }
+
+                public render(viewModel: ScatterViewModel) {
+                    this.setViewModel(viewModel);
+                    this.draw();
+                }
+
+                public setViewModel(viewModel: ScatterViewModel) {
+                    this.viewModel = viewModel;
+                    let gl = this.gl;
+
+                    let vertices = [];
+                    let colors = [];
+                    for (let p of viewModel.dataPoints) {
+                        this.makeCircle(p.x, p.y, p.radius, vertices);
+
+                        // TODO: index buffer for colors?
+                        let r = Math.random(), g = Math.random(), b = Math.random();
+                        for (let i = 0; i < this.resolution * 3; i++) {
+                            colors.push(r, g, b, 1.0);
+                            //colors.push(p.fill.R / 255.0, p.fill.G / 255.0, p.fill.B / 255.0, p.alpha);
+                        }
+                    }
+
+                    // Buffers
+                    this.vertexBuffer = gl.createBuffer();
+                    gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexBuffer);
+                    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
+                    //(<any>this.vertexBuffer).itemSize = 2;
+
+                    this.colorBuffer = gl.createBuffer();
+                    gl.bindBuffer(gl.ARRAY_BUFFER, this.colorBuffer);
+                    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(colors), gl.STATIC_DRAW);
+                    //(<any>this.colorBuffer).itemSize = 4;
+                }
+
+                public draw() {
+                    let gl = this.gl;
+                    let renderer = this.renderer;
+
+                    gl.useProgram(this.program);  // TODO: check if it is already the last used program
+
+                    renderer.clear();
+
+                    // set buffers & attributes
+                    this.vertexShader.setAttributes(gl, this.vertexBuffer, this.colorBuffer, null, null);
+
+                    // set uniforms
+                    this.vertexShader.setUniforms(gl, renderer.bbox);
+
+                    //gl.drawArrays(gl.POINTS, 0, this.viewModel.dataPoints.length);
+                    gl.drawArrays(gl.TRIANGLES, 0, this.viewModel.dataPoints.length * (this.resolution));
+                }
+
+                private makeCircle(cx: number, cy: number, r: number, vertices: number[]) {
+                    let lastX: number, lastY: number;
+                    for (let i = 0; i <= this.resolution; i++) {
+                        let t = i % this.resolution;
+                        let x = cx + (r * this.circleTemplate[t * 2]);
+                        let y = cy + (r * this.circleTemplate[t * 2 + 1]);
+
+                        if (i > 0) {
+                            vertices.push(cx, cy);
+                            vertices.push(lastX, lastY);
+                            vertices.push(x, y);
+                        }
+
+                        lastX = x;
+                        lastY = y;
                     }
                 }
 
-                // Buffers
-                this.vertexBuffer = gl.createBuffer();
-                gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexBuffer);
-                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
-                //(<any>this.vertexBuffer).itemSize = 2;
+                private makeCircleTemplate(): number[] {
+                    let template = [];
+                    for (let i = 0; i < this.resolution; i++) {
+                        let pct = i / this.resolution;
+                        let theta = pct * Math.PI * 2;
 
-                this.colorBuffer = gl.createBuffer();
-                gl.bindBuffer(gl.ARRAY_BUFFER, this.colorBuffer);
-                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(colors), gl.STATIC_DRAW);
-                //(<any>this.colorBuffer).itemSize = 4;
-            }
-
-            public draw() {
-                let gl = this.gl;
-                let renderer = this.renderer;
-
-                gl.useProgram(this.program);  // TODO: check if it is already the last used program
-
-                renderer.clear();
-
-                // set buffers & attributes
-                this.vertexShader.setAttributes(gl, this.vertexBuffer, this.colorBuffer, null, null);
-
-                // set uniforms
-                this.vertexShader.setUniforms(gl, renderer.bbox);
-
-                //gl.drawArrays(gl.POINTS, 0, this.viewModel.dataPoints.length);
-                gl.drawArrays(gl.TRIANGLES, 0, this.viewModel.dataPoints.length * (this.resolution));
-            }
-
-            private makeCircle(cx: number, cy: number, r: number, vertices: number[]) {
-                let lastX: number, lastY: number;
-                for (let i = 0; i <= this.resolution; i++) {
-                    let t = i % this.resolution;
-                    let x = cx + (r * this.circleTemplate[t * 2]);
-                    let y = cy + (r * this.circleTemplate[t * 2 + 1]);
-
-                    if (i > 0) {
-                        vertices.push(cx, cy);
-                        vertices.push(lastX, lastY);
-                        vertices.push(x, y);
+                        template.push(Math.cos(theta), Math.sin(theta));
                     }
 
-                    lastX = x;
-                    lastY = y;
+                    return template;
                 }
             }
 
-            private makeCircleTemplate(): number[] {
-                let template = [];
-                for (let i = 0; i < this.resolution; i++) {
-                    let pct = i / this.resolution;
-                    let theta = pct * Math.PI * 2;
+            export class ScatterTextureWebGLRenderer {
+                private viewModel: ScatterViewModel;
 
-                    template.push(Math.cos(theta), Math.sin(theta));
+                private vertexShader: WebGL.DefaultVertexShader;
+                private vertexBuffer: WebGLBuffer;
+                private colorBuffer: WebGLBuffer;
+                private texCoordBuffer: WebGLBuffer;
+                private radiusBuffer: WebGLBuffer;
+                private fragmentShader: WebGL.CircleFragmentShader;
+                private program: WebGLProgram;
+                private gl: WebGLRenderingContext;
+                private renderer: MinimalWebGLRenderer;
+                private canvas: HTMLCanvasElement;
+                private canvasCtx: CanvasRenderingContext2D;
+                private texture: WebGL.Texture;
+
+                constructor(renderer: MinimalWebGLRenderer) {
+                    this.renderer = renderer;
+                    this.gl = renderer.getGL();
+
+                    this.vertexShader = new WebGL.DefaultVertexShader();
+                    this.fragmentShader = new WebGL.CircleFragmentShader();
+                    this.program = renderer.buildProgram(this.vertexShader, this.fragmentShader);
+
+                    let body = $('body');
+                    let canvasElement = $('<canvas>');
+                    body.append(canvasElement);
+                    this.canvas = <HTMLCanvasElement>canvasElement.get(0);
+                    this.canvasCtx = this.canvas.getContext('2d');
                 }
 
-                return template;
-            }
-        }
+                public render(viewModel: ScatterViewModel) {
+                    this.setViewModel(viewModel);
+                    this.draw();
+                }
 
-        class ScatterTextureWebGLRenderer {
-            private viewModel: ScatterViewModel;
+                public setViewModel(viewModel: ScatterViewModel) {
+                    this.viewModel = viewModel;
+                    let gl = this.gl;
 
-            private vertexShader: WebGL.DefaultVertexShader;
-            private vertexBuffer: WebGLBuffer;
-            private colorBuffer: WebGLBuffer;
-            private texCoordBuffer: WebGLBuffer;
-            private radiusBuffer: WebGLBuffer;
-            private fragmentShader: WebGL.CircleFragmentShader;
-            private program: WebGLProgram;
-            private gl: WebGLRenderingContext;
-            private renderer: MinimalWebGLRenderer;
-            private canvas: HTMLCanvasElement;
-            private canvasCtx: CanvasRenderingContext2D;
-            private texture: WebGL.Texture;
+                    // TODO: will likely have to create a texture for each bubble, seems infeasible.
 
-            constructor(renderer: MinimalWebGLRenderer) {
-                this.renderer = renderer;
-                this.gl = renderer.getGL();
+                    let vertices = [];
+                    let texcoords = [];
+                    let colors = [];
+                    let radii = [];
+                    let vertexOffsets = [  // TODO: 0.5?
+                        -1, 1,
+                        1, 1,
+                        1, -1,
+                        -1, 1,
+                        -1, -1,
+                        1, -1];
+                    let texCycle = [
+                        0, 1,
+                        1, 1,
+                        1, 0,
+                        0, 1,
+                        0, 0,
+                        1, 0,
+                    ];
 
-                this.vertexShader = new WebGL.DefaultVertexShader();
-                this.fragmentShader = new WebGL.CircleFragmentShader();
-                this.program = renderer.buildProgram(this.vertexShader, this.fragmentShader);
-
-                let body = $('body');
-                let canvasElement = $('<canvas>');
-                body.append(canvasElement);
-                this.canvas = <HTMLCanvasElement>canvasElement.get(0);
-                this.canvasCtx = this.canvas.getContext('2d');
-            }
-
-            public render(viewModel: ScatterViewModel) {
-                this.setViewModel(viewModel);
-                this.draw();
-            }
-
-            public setViewModel(viewModel: ScatterViewModel) {
-                this.viewModel = viewModel;
-                let gl = this.gl;
-
-                // TODO: will likely have to create a texture for each bubble, seems infeasible.
-
-                let vertices = [];
-                let texcoords = [];
-                let colors = [];
-                let radii = [];
-                let vertexOffsets = [  // TODO: 0.5?
-                    -1, 1,
-                    1, 1,
-                    1, -1,
-                    -1, 1,
-                    -1, -1,
-                    1, -1];
-                let texCycle = [
-                    0, 1,
-                    1, 1,
-                    1, 0,
-                    0, 1,
-                    0, 0,
-                    1, 0,
-                ];
-
-                for (let p of viewModel.dataPoints) {
-                    let r = p.radius;
-                    for (let i = 0; i < 6; i++) {
-                        vertices.push(r * vertexOffsets[i * 2] + p.x, viewModel.boundingBox.height - (r * vertexOffsets[i * 2 + 1] + p.y));
-                        texcoords.push(texCycle[i * 2], texCycle[i * 2 + 1]);
-                        colors.push(p.fill.R / 255.0, p.fill.G / 255.0, p.fill.B / 255.0, p.alpha);
-                        radii.push(r);
+                    for (let p of viewModel.dataPoints) {
+                        let r = p.radius;
+                        for (let i = 0; i < 6; i++) {
+                            vertices.push(r * vertexOffsets[i * 2] + p.x, viewModel.boundingBox.height - (r * vertexOffsets[i * 2 + 1] + p.y));
+                            texcoords.push(texCycle[i * 2], texCycle[i * 2 + 1]);
+                            colors.push(p.fill.R / 255.0, p.fill.G / 255.0, p.fill.B / 255.0, p.alpha);
+                            radii.push(r);
+                        }
                     }
+
+                    //gl.enable(gl.DEPTH_TEST);
+                    //gl.depthFunc(gl.LESS);  // TODO: might be the default...
+                    gl.enable(gl.BLEND);
+
+                    let texture = gl.createTexture();
+                    let textureUnit = 0;
+                    //gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+                    gl.bindTexture(gl.TEXTURE_2D, texture);
+                    //gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, this.canvas);
+
+                    // TODO: maybe not necessary, always make canvas the max size rounded up to the next power of 2
+                    // make sure we can render it even if it's not a power of 2
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+                    this.texture = {
+                        texture: texture,
+                        unit: textureUnit,
+                    };
+
+                    // Buffers
+                    this.vertexBuffer = gl.createBuffer();
+                    gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexBuffer);
+                    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
+                    //(<any>this.vertexBuffer).itemSize = 2;
+
+                    this.colorBuffer = gl.createBuffer();
+                    gl.bindBuffer(gl.ARRAY_BUFFER, this.colorBuffer);
+                    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(colors), gl.STATIC_DRAW);
+                    //(<any>this.colorBuffer).itemSize = 4;
+
+                    this.texCoordBuffer = gl.createBuffer();
+                    gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
+                    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(texcoords), gl.STATIC_DRAW);
+
+                    this.radiusBuffer = gl.createBuffer();
+                    gl.bindBuffer(gl.ARRAY_BUFFER, this.radiusBuffer);
+                    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(radii), gl.STATIC_DRAW);
                 }
 
-                //gl.enable(gl.DEPTH_TEST);
-                //gl.depthFunc(gl.LESS);  // TODO: might be the default...
-                gl.enable(gl.BLEND);
+                public draw() {
+                    let gl = this.gl;
+                    let renderer = this.renderer;
 
-                let texture = gl.createTexture();
-                let textureUnit = 0;
-                //gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-                gl.bindTexture(gl.TEXTURE_2D, texture);
-                //gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, this.canvas);
+                    gl.useProgram(this.program);  // TODO: check if it is already the last used program
 
-                // TODO: maybe not necessary, always make canvas the max size rounded up to the next power of 2
-                // make sure we can render it even if it's not a power of 2
-                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                    renderer.clear();
 
-                this.texture = {
-                    texture: texture,
-                    unit: textureUnit,
-                };
+                    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
-                // Buffers
-                this.vertexBuffer = gl.createBuffer();
-                gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexBuffer);
-                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
-                //(<any>this.vertexBuffer).itemSize = 2;
+                    // set buffers & attributes
+                    this.vertexShader.setAttributes(gl, this.vertexBuffer, this.colorBuffer, this.texCoordBuffer, this.radiusBuffer);
 
-                this.colorBuffer = gl.createBuffer();
-                gl.bindBuffer(gl.ARRAY_BUFFER, this.colorBuffer);
-                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(colors), gl.STATIC_DRAW);
-                //(<any>this.colorBuffer).itemSize = 4;
+                    // set uniforms
+                    this.vertexShader.setUniforms(gl, renderer.bbox);
+                    this.
 
-                this.texCoordBuffer = gl.createBuffer();
-                gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
-                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(texcoords), gl.STATIC_DRAW);
-
-                this.radiusBuffer = gl.createBuffer();
-                gl.bindBuffer(gl.ARRAY_BUFFER, this.radiusBuffer);
-                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(radii), gl.STATIC_DRAW);
+                    //gl.drawArrays(gl.POINTS, 0, this.viewModel.dataPoints.length);
+                        gl.drawArrays(gl.TRIANGLES, 0, this.viewModel.dataPoints.length * 6);
+                    //gl.drawElements(gl.TRIANGLES, this.viewModel.dataPoints.length * 2, gl.UNSIGNED_SHORT, 0);
+                }
             }
 
-            public draw() {
-                let gl = this.gl;
-                let renderer = this.renderer;
+            export class ScatterPixiWebGLRenderer implements IRenderer {
+                private renderer: PixiWebGLRenderer;
 
-                gl.useProgram(this.program);  // TODO: check if it is already the last used program
+                constructor(renderer: PixiWebGLRenderer) {
+                    this.renderer = renderer;
+                }
 
-                renderer.clear();
+                public render(viewModel: ScatterViewModel) {
+                    let graphics = this.renderer.createGraphics();
+                    let bbox = viewModel.boundingBox;
 
-                gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+                    for (let point of viewModel.dataPoints) {
+                        graphics.lineStyle(1, 0x0, 1);
+                        graphics.beginFill(this.colorToNumber(point.fill), point.alpha);
+                        graphics.drawCircle(
+                            point.x,
+                            point.y,
+                            point.radius);
+                        graphics.endFill();
+                    }
 
-                // set buffers & attributes
-                this.vertexShader.setAttributes(gl, this.vertexBuffer, this.colorBuffer, this.texCoordBuffer, this.radiusBuffer);
-
-                // set uniforms
-                this.vertexShader.setUniforms(gl, renderer.bbox);
-                this.
-
-                //gl.drawArrays(gl.POINTS, 0, this.viewModel.dataPoints.length);
-                gl.drawArrays(gl.TRIANGLES, 0, this.viewModel.dataPoints.length * 6);
-                //gl.drawElements(gl.TRIANGLES, this.viewModel.dataPoints.length * 2, gl.UNSIGNED_SHORT, 0);
-            }
-        }
-
-        class ScatterPixiWebGLRenderer implements IRenderer {
-            private renderer: PixiWebGLRenderer;
-
-            constructor(renderer: PixiWebGLRenderer) {
-                this.renderer = renderer;
-            }
-
-            public render(viewModel: ScatterViewModel) {
-                let graphics = this.renderer.createGraphics();
-                let bbox = viewModel.boundingBox;
-
-                for (let point of viewModel.dataPoints) {
-                    graphics.lineStyle(1, 0x0, 1);
-                    graphics.beginFill(this.colorToNumber(point.fill), point.alpha);
-                    graphics.drawCircle(
-                        point.x,
-                        point.y,
-                        point.radius);
+                    graphics.beginFill(0x00ff00, 0.2);
+                    graphics.drawRect(bbox.left, bbox.top, bbox.width, bbox.height);
                     graphics.endFill();
+
+                    this.renderer.render(graphics);
                 }
 
-                graphics.beginFill(0x00ff00, 0.2);
-                graphics.drawRect(bbox.left, bbox.top, bbox.width, bbox.height);
-                graphics.endFill();
-
-                this.renderer.render(graphics);
-            }
-
-            private colorToNumber(color: RgbColor): number {
-                return ((color.R & 0xff) << 16) | ((color.G & 0xff) << 8) | (color.B & 0xff);
+                private colorToNumber(color: RgbColor): number {
+                    return ((color.R & 0xff) << 16) | ((color.G & 0xff) << 8) | (color.B & 0xff);
+                }
             }
         }
 
@@ -573,12 +587,12 @@ module powerbi.visuals.experimental {
             private dataView: DataView;
             private dataViewHelper: DataViewHelper;
 
-            constructor(dataView: DataView) {
-                this.dataView = dataView;
-                this.dataViewHelper = new DataViewHelper(dataView);
+            constructor(dataViews: DataView[]) {
+                this.dataView = dataViews[0];
+                this.dataViewHelper = new DataViewHelper(dataViews[0]);
             }
 
-            public convert(colorPalette: IDataColorPalette, defaultDataPointColor?: string): ScatterDataModel {
+            public convert(colorPalette: IDataColorPalette, defaultDataPointColor?: string): models.ScatterData {
                 let categoryValues = this.dataViewHelper.categoryValues;
                 let categoryObjects = this.dataViewHelper.categoryObjects;
                 let seriesColumns = this.dataViewHelper.seriesColumns;
@@ -592,7 +606,7 @@ module powerbi.visuals.experimental {
 
                 let sizeRange: NumberRange = this.computeMinMax(seriesColumns, scatterMetadata.sizeIndex);
 
-                let dataPoints: ScatterDataPointModel[] = [];
+                let dataPoints: models.ScatterDataPoint[] = [];
                 for (let categoryIdx = 0, catLen = categoryValues.length; categoryIdx < catLen; categoryIdx++) {
                     //let categoryValue = categoryValues[categoryIdx];
 
@@ -630,9 +644,9 @@ module powerbi.visuals.experimental {
                             .withSeries(this.dataView.categorical.values, seriesColumn)
                             .createSelectionId();
 
-						// TODO: tooltips
+                        // TODO: tooltips
 
-                        let dataPoint: ScatterDataPointModel = {
+                        let dataPoint: models.ScatterDataPoint = {
                             x: xVal,
                             y: yVal,
                             size: size,
@@ -653,7 +667,7 @@ module powerbi.visuals.experimental {
                 let xDomain: Domain = Domain.createFromValues(_.map(dataPoints, d => d.x));
                 let yDomain: Domain = Domain.createFromValues(_.map(dataPoints, d => d.y));
 
-                return <ScatterDataModel> {
+                return <models.ScatterData> {
                     dataPoints: dataPoints,
                     sizeRange: sizeRange,
                     xDomain: xDomain,
@@ -765,7 +779,7 @@ module powerbi.visuals.experimental {
         }
 
         interface IRenderer {
-            render(viewMode: ScatterViewModel);
+            render(viewMode: viewModels.ScatterViewModel);
         }
     }
 

@@ -1,6 +1,6 @@
 ﻿/// <reference path="../../_references.ts"/>
 
-module powerbi.visuals.experimental {
+module powerbi.visuals.experimental.prototype {
     import EnumExtensions = jsCommon.EnumExtensions;
 
     export class Domain {
@@ -109,81 +109,11 @@ module powerbi.visuals.experimental {
                 categoryAxisScaleType: string;
                 y1AxisScaleType: string;
                 y2AxisScaleType: string;
-                showY1Axis: boolean;
                 showY2Axis: boolean;
-                showCategoryAxis: boolean;
                 showCategoryAxisTitle: boolean;
                 showValueAxisTitle: boolean;
                 secShowValueAxisTitle: boolean;
-                showValueAxisOnRight: boolean;
-                isScalar: boolean;
             }
-        }
-
-        export interface CartesianAxisProperties {
-            x: IAxisProperties;
-            y1: IAxisProperties;
-            y2?: IAxisProperties;
-        }
-
-        export interface IAxisProperties {
-            /** 
-             * The D3 Scale object.
-             */
-            scale: D3.Scale.GenericScale<any>;
-            /** 
-             * The D3 Axis object.
-             */
-            axis: D3.Svg.Axis;
-            /**
-             * An array of the tick values to display for this axis.
-             */
-            values: any[];
-            maxLabelWidth: number;
-            /** 
-             * The D3.Selection that the axis should render to.
-             */
-            //graphicsContext?: D3.Selection;
-            /** 
-             * The ValueType of the column used for this axis.
-             */
-            axisType: ValueType;
-            /**
-             * A formatter with appropriate properties configured for this field.
-             */
-            formatter: IValueFormatter;
-            /**
-             * The axis title label.
-             */
-            axisLabel: string;
-            /**
-             * Cartesian axes are either a category or value axis.
-             */
-            isCategoryAxis: boolean;
-            /** 
-             * (optional) The max width for category tick label values. used for ellipsis truncation / label rotation.
-             */
-            xLabelMaxWidth?: number;
-            /** 
-             * (optional) The thickness of each category on the axis.
-             */
-            categoryThickness?: number;
-            /** 
-             * (optional) The outer padding in pixels applied to the D3 scale.
-             */
-            outerPadding?: number;
-            /** 
-             * (optional) Whether we are using a default domain.
-             */
-            usingDefaultDomain?: boolean;
-            /** (optional) do default d3 axis labels fit? */
-            willLabelsFit?: boolean;
-            /** (optional) word break axis labels */
-            willLabelsWordBreak?: boolean;
-            /** 
-             * (optional) Whether log scale is possible on the current domain.
-             */
-            isLogScaleAllowed?: boolean;
         }
 
         export interface CartesianAxesInitOptions extends VisualInitOptions {
@@ -191,11 +121,13 @@ module powerbi.visuals.experimental {
         }
 
         class CartesianAxesConverter {
+            private valueAxisProperties;
+            private categoryAxisProperties;
+
             private dataViewHelper: DataViewHelper;
             private objects: DataViewObjects;
-            private layers: ICartesianLayer[];
 
-            private properties = {
+            public properties = {
                 categoryAxis: {
                     axisScale: <DataViewObjectPropertyIdentifier>{ objectName: 'categoryAxis', propertyName: 'axisScale' },
                     end: <DataViewObjectPropertyIdentifier>{ objectName: 'categoryAxis', propertyName: 'end' },
@@ -214,75 +146,80 @@ module powerbi.visuals.experimental {
                     end: <DataViewObjectPropertyIdentifier>{ objectName: 'valueAxis', propertyName: 'end' },
                     showAxisTitle: <DataViewObjectPropertyIdentifier>{ objectName: 'valueAxis', propertyName: 'showAxisTitle' },
                     secShowAxisTitle: <DataViewObjectPropertyIdentifier>{ objectName: 'valueAxis', propertyName: 'secShowAxisTitle' },
-                    position: <DataViewObjectPropertyIdentifier>{ objectName: 'valueAxis', propertyName: 'position' },
                 },
             };
 
-            constructor(dataViews: DataView[], layers: ICartesianLayer[]) {
+            constructor(dataViews: DataView[]) {
                 this.dataViewHelper = new DataViewHelper(dataViews[0]);
                 this.objects = dataViews[0].metadata.objects;
-                this.layers = layers;
             }
 
             public convert(): models.CartesianAxesData {
-                let categoryAxisLabelColor = DataViewObjects.getFillColor(this.objects, this.properties.categoryAxis.labelColor);
-                let valueAxisLabelColor = DataViewObjects.getFillColor(this.objects, this.properties.valueAxis.labelColor);
+                let xLabelColor: string;
+                let yLabelColor: string;
+                let y2LabelColor: string;
 
-                let showCategoryAxis = DataViewObjects.getValue<boolean>(this.objects, this.properties.categoryAxis.show);
-                let showY2Axis = DataViewObjects.getValue<boolean>(this.objects, this.properties.valueAxis.secShow);
-                let showY1Axis = DataViewObjects.getValue<boolean>(this.objects, this.properties.valueAxis.show);
+                if (this.shouldRenderXAxis(axes.x)) {
+                    if (axes.x.isCategoryAxis) {
+                        xLabelColor = DataViewObjects.getFillColor(this.objects, this.properties.categoryAxis.labelColor, "")
+                    } else {
+                        xLabelColor = DataViewObjects.getFillColor(this.objects, this.properties.valueAxis.labelColor, "");
+                    }
+                }
 
+                let forcedXMin = DataViewObjects.getValue<number>(this.objects, this.properties.categoryAxis.start, null);
+                let forcedXMax = DataViewObjects.getValue<number>(this.objects, this.properties.categoryAxis.end, null);
+
+                // NOTE: default to undefined for default becuase some behavior depends on explicitly set values of true or false.
+                let showY2Axis = DataViewObjects.getValue<boolean>(this.objects, this.properties.valueAxis.secShow, undefined);
                 let forceValueAxisMerge = (showY2Axis === false);  // Only force a merge if secShow is explicitly set to false
-                let forcedValueAxisStart = DataViewObjects.getValue<number>(this.objects, this.properties.valueAxis.start);
-                let forcedValueAxisEnd = DataViewObjects.getValue<number>(this.objects, this.properties.valueAxis.end);
+                let forcedValueAxisStart = DataViewObjects.getValue<number>(this.objects, this.properties.valueAxis.start, undefined);
+                let forcedValueAxisEnd = DataViewObjects.getValue<number>(this.objects, this.properties.valueAxis.end, undefined);
                 let forcedValueAxisDomain = new Domain(forcedValueAxisStart, forcedValueAxisEnd);
-
-                let forcedCategoryAxisStart = DataViewObjects.getValue<number>(this.objects, this.properties.categoryAxis.start);
-                let forcedCategoryAxisEnd = DataViewObjects.getValue<number>(this.objects, this.properties.categoryAxis.end);
-                let forcedCategoryAxisDomain = new Domain(forcedCategoryAxisStart, forcedCategoryAxisEnd);
-
-                let showCategoryAxisTitle = DataViewObjects.getValue<boolean>(this.objects, this.properties.categoryAxis.showAxisTitle);
-                let showValueAxisTitle = DataViewObjects.getValue<boolean>(this.objects, this.properties.valueAxis.showAxisTitle);
-                let secShowValueAxisTitle = DataViewObjects.getValue<boolean>(this.objects, this.properties.valueAxis.secShowAxisTitle);
+                let showValueAxisTitle = DataViewObjects.getValue<boolean>(this.objects, this.properties.valueAxis.showAxisTitle, false);
+                let secShowValueAxisTitle = DataViewObjects.getValue<boolean>(this.objects, this.properties.valueAxis.secShowAxisTitle, false);
 
                 let categoryAxisScaleType = DataViewObjects.getValue<string>(this.objects, this.properties.categoryAxis.axisScale, axisScale.linear);
+                let showCategoryAxisTitle = DataViewObjects.getValue<boolean>(this.objects, this.properties.categoryAxis.showAxisTitle, false);
                 let y1AxisScaleType = DataViewObjects.getValue<string>(this.objects, this.properties.valueAxis.axisScale, axisScale.linear);
                 let y2AxisScaleType = DataViewObjects.getValue<string>(this.objects, this.properties.valueAxis.secAxisScale, axisScale.linear);
 
-                let valueAxisPosition = DataViewObjects.getValue<string>(this.objects, this.properties.valueAxis.position, yAxisPosition.left);
-
-                let layers = this.layers;
-                let isScalar = !_.isEmpty(layers) && layers[0].isScalar();
-
                 return {
-                    forcedXDomain: forcedCategoryAxisDomain,
+                    forcedXDomain: new Domain(forcedXMin, forcedXMax),
                     forceValueAxisMerge: forceValueAxisMerge,
                     categoryAxisScaleType: categoryAxisScaleType,
-                    showCategoryAxis: showCategoryAxis,
                     y1AxisScaleType: y1AxisScaleType,
                     y2AxisScaleType: y2AxisScaleType,
-                    showY1Axis: showY1Axis,
                     showY2Axis: !!showY2Axis,
                     forcedY1Domain: forcedValueAxisDomain,
                     showCategoryAxisTitle: showCategoryAxisTitle,
                     showValueAxisTitle: showValueAxisTitle,
                     secShowValueAxisTitle: secShowValueAxisTitle,
-                    showValueAxisOnRight: valueAxisPosition === yAxisPosition.right,
-                    isScalar: isScalar,
                 };
+            }
+
+            private shouldRenderSecondaryAxis(axisProperties: IAxisProperties): boolean {
+                return DataViewObjects.getValue<boolean>(this.objects, this.properties.valueAxis.secShow, true) && !_.isEmpty(axisProperties.values);
+            }
+
+            private shouldRenderAxis(axisProperties: IAxisProperties): boolean {
+                if (axisProperties.isCategoryAxis)
+                    return DataViewObjects.getValue<boolean>(this.objects, this.properties.categoryAxis.show, true) && !_.isEmpty(axisProperties.values);
+                else
+                    return DataViewObjects.getValue<boolean>(this.objects, this.properties.valueAxis.show, true) && !_.isEmpty(axisProperties.values);
             }
         }
 
-        //export interface ICartesianAxes extends ILayoutable {
-        //    xScale: D3.Scale.GenericScale<any>;
-        //    y1Scale: D3.Scale.GenericScale<any>;
-        //    y2Scale: D3.Scale.GenericScale<any>;
-        //    xDomain: Domain;
-        //    yDomain: Domain;
+        export interface ICartesianAxes extends ILayoutable {
+            xScale: D3.Scale.GenericScale<any>;
+            y1Scale: D3.Scale.GenericScale<any>;
+            y2Scale: D3.Scale.GenericScale<any>;
+            xDomain: Domain;
+            yDomain: Domain;
 
-        //    getPlotArea(): BoundingBox;
-        //    visitLayer(layer: ICartesianLayer): void
-        //}
+            getPlotArea(): BoundingBox;
+            visitLayer(layer: ICartesianLayer): void
+        }
 
         interface MergedAxisProperties {
             domain: Domain;
@@ -295,23 +232,9 @@ module powerbi.visuals.experimental {
             export const MinBottomMargin = 25;
             export const TopMargin = 8;
             export const MinOverlapPctToMergeValueAxes = 0.1;
-            export const FontSize = 11;
-            export const FontSizeString = jsCommon.PixelConverter.toString(constants.FontSize);
-            export const TextProperties: TextProperties = {
-                fontFamily: 'wf_segoe-ui_normal',
-                fontSize: constants.FontSizeString,
-            };
-            export const XLabelMaxAllowedOverflow = 25;  // TODO: why?
-            //export const DefaultTextHeight = 10;
-            export const Padding: IMargin = {
-                left: 10,
-                right: 15,
-                bottom: 12,
-                top: 0,
-            };
         }
 
-        export class CartesianAxes {
+        export class CartesianAxes implements ICartesianAxes {
             private dataModel: models.CartesianAxesData;
             //private isXScalar: boolean;
             //private categoryDomain: Domain;
@@ -319,7 +242,6 @@ module powerbi.visuals.experimental {
             private initOptions: CartesianAxesInitOptions;
             private renderer: IRenderer;
             private axesNegotiator: AxesNegotiator;
-            private layers: ICartesianLayer[];
 
             private maxMarginFactor: number;
 
@@ -335,7 +257,7 @@ module powerbi.visuals.experimental {
             public xDomain: Domain;
             public yDomain: Domain;
 
-            public init(options: CartesianAxesInitOptions, layers: ICartesianLayer[]): void {
+            public init(options: CartesianAxesInitOptions): void {
                 let axisLinesVisibility = options.axisLinesVisibility;
                 this.showLinesOnX = this.scrollY = EnumExtensions.hasFlag(axisLinesVisibility, AxisLinesVisibility.ShowLinesOnBothAxis) ||
                 EnumExtensions.hasFlag(axisLinesVisibility, AxisLinesVisibility.ShowLinesOnXAxis);
@@ -347,8 +269,6 @@ module powerbi.visuals.experimental {
                 this.maxMarginFactor = options.style.maxMarginFactor || constants.MaxMarginFactor;
 
                 this.renderer = this.getRenderer(options.preferredRenderer, options.rendererFactory);
-
-                this.layers = layers;
             }
 
             private getRenderer(type: RendererType, factory: RendererFactory): IRenderer {
@@ -362,7 +282,7 @@ module powerbi.visuals.experimental {
             // Or, should it use the data model for the visual? I think the latter.
 
             public convert(dataViews: DataView[]): void {
-                let converter = new CartesianAxesConverter(dataViews, this.layers);
+                let converter = new CartesianAxesConverter(dataViews);
 
                 this.dataModel = converter.convert();
             }
@@ -398,8 +318,7 @@ module powerbi.visuals.experimental {
                 };
             }
 
-            public layout(bbox: BoundingBox, layers: ICartesianLayer[]): SceneGraphNode {
-                let dataModel = this.dataModel;
+            public layout(bbox: BoundingBox, xDomain: Domain, yDomain: Domain): SceneGraphNode {
                 this.viewModel = this.buildViewModel(this.dataModel, bbox);
 
                 let node = new SceneGraphNode();
@@ -439,257 +358,25 @@ module powerbi.visuals.experimental {
                 let visualOptions: CalculateScaleAndDomainOptions = {
                     viewport: viewport,
                     margin: margin,
-                    forcedXDomain: dataModel.forcedXDomain.toArray(),
-                    forceMerge: dataModel.forceValueAxisMerge,
+                    forcedXDomain: this.dataModel.forcedXDomain.toArray(),
+                    forceMerge: this.dataModel.forceValueAxisMerge,
                     showCategoryAxisLabel: false,  // TODO: ??
                     showValueAxisLabel: false,  // TODO: ??
-                    categoryAxisScaleType: dataModel.categoryAxisScaleType,
-                    valueAxisScaleType: dataModel.y1AxisScaleType,
+                    categoryAxisScaleType: this.dataModel.categoryAxisScaleType,
+                    valueAxisScaleType: this.dataModel.valueAxisScaleType,
                 };
 
-                let axes = new AxesNegotiator(layers).calculateAxes(visualOptions, dataModel, constants.TextProperties, false, null);
 
-                let renderXAxis = this.shouldRenderAxis(dataModel, axes.x);
-                let renderY1Axis = this.shouldRenderAxis(dataModel, axes.y1);
-                let renderY2Axis = this.shouldRenderSecondaryAxis(dataModel, axes.y2);
 
-                let innerWidth = viewport.width - (margin.left + margin.right);
 
-                let showY1OnRight = dataModel.showValueAxisOnRight;
-                let isScalar = dataModel.isScalar;
-
-                // TODO: preferred plot area?
-
-                let doneWithMargins = false;
-                let iteration = 0;
-                const maxIterations = 2;
-                let tickLabelMargins;
-                while (!doneWithMargins && iteration < maxIterations) {
-                    iteration++;
-                    tickLabelMargins = AxisHelper.getTickLabelMargins(
-                        { width: innerWidth, height: viewport.height },
-                        maxMargins.left,
-                        TextMeasurementService.measureSvgTextWidth,
-                        TextMeasurementService.estimateSvgTextHeight,
-                        axes,
-                        maxMargins.bottom,
-                        Prototype.inherit(constants.TextProperties),
-                        false,  // this.isXScrollBarVisible || this.isYScrollBarVisible,
-                        showY1OnRight,
-                        renderXAxis,
-                        renderY1Axis,
-                        renderY2Axis);
-
-                    // We look at the y axes as main and second sides, if the y axis orientation is right so the main side represents the right side
-                    let maxMainYaxisSide = showY1OnRight ? tickLabelMargins.yRight : tickLabelMargins.yLeft,
-                        maxSecondYaxisSide = showY1OnRight ? tickLabelMargins.yLeft : tickLabelMargins.yRight,
-                        xMax = tickLabelMargins.xMax;
-                    // TODO: there is a better way, the visual should communicate that it needs space below the x-axis through ICartesianVisual
-                    //if (this.type === CartesianChartType.Play && this.animator)
-                    //    xMax += CartesianChart.PlayAxisBottomMargin;
-
-                    maxMainYaxisSide += constants.Padding.left;
-                    if ((renderY2Axis && !showY1OnRight) || (showY1OnRight && renderY1Axis))
-                        maxSecondYaxisSide += constants.Padding.right;
-                    xMax += constants.Padding.bottom;
-
-                    if (this.hideAxisLabels(viewport)) {
-                        axes.x.axisLabel = null;
-                        axes.y1.axisLabel = null;
-                        if (axes.y2) {
-                            axes.y2.axisLabel = null;
-                        }
-                    }
-
-                    this.addUnitTypeToAxisLabel(axes);
-
-                    axisLabels = { x: axes.x.axisLabel, y: axes.y1.axisLabel, y2: axes.y2 ? axes.y2.axisLabel : null };
-                    chartHasAxisLabels = (axisLabels.x != null) || (axisLabels.y != null || axisLabels.y2 != null);
-
-                    if (axisLabels.x != null)
-                        xMax += CartesianChart.XAxisLabelPadding;
-                    if (axisLabels.y != null)
-                        maxMainYaxisSide += CartesianChart.YAxisLabelPadding;
-                    if (axisLabels.y2 != null)
-                        maxSecondYaxisSide += CartesianChart.YAxisLabelPadding;
-
-                    margin.left = showY1OnRight ? maxSecondYaxisSide : maxMainYaxisSide;
-                    margin.right = showY1OnRight ? maxMainYaxisSide : maxSecondYaxisSide;
-                    margin.bottom = xMax;
-                    this.margin = margin;
-
-                    width = viewport.width - (margin.left + margin.right);
-
-                    // re-calculate the axes with the new margins
-                    let previousTickCountY1 = axes.y1.values.length;
-                    let previousTickCountY2 = axes.y2 && axes.y2.values.length;
-                    axes = calculateAxes(this.layers, viewport, margin, this.categoryAxisProperties, this.valueAxisProperties, CartesianChart.TextProperties, this.isXScrollBarVisible || this.isYScrollBarVisible, axes);
-
-                    // the minor padding adjustments could have affected the chosen tick values, which would then need to calculate margins again
-                    // e.g. [0,2,4,6,8] vs. [0,5,10] the 10 is wider and needs more margin.
-                    if (axes.y1.values.length === previousTickCountY1 && (!axes.y2 || axes.y2.values.length === previousTickCountY2))
-                        doneWithMargins = true;
-                }
+                //if (this.type === CartesianChartType.Play && this.animator)
+                //    margin.bottom += CartesianChart.PlayAxisBottomMargin;
 
                 return node;
             }
 
-            private hideAxisLabels(viewport: IViewport): boolean {
-                // TODO: this includes legend height...
-                if (this.cartesianSmallViewPortProperties) {
-                    if (this.cartesianSmallViewPortProperties.hideAxesOnSmallViewPort && (viewport.height < this.cartesianSmallViewPortProperties.MinHeightAxesVisible) && !this.visualInitOptions.interactivity.isInteractiveLegend) {
-                        return true;
-                    }
-                }
-                return false;
-            }
-
-            private getMaxTextWidth(labels: string[], textProperties: TextProperties): number {
-                let max = 0;
-                for (let label of labels) {
-                    textProperties.text = label;
-                    max = Math.max(max, TextMeasurementService.measureSvgTextWidth(textProperties));
-                }
-
-                return max;
-            }
-
-            private getTickLabelMargins(
-                viewport: IViewport,
-                marginLimits: IMargin,
-                axes: CartesianAxisProperties,
-                textHeight: number,
-                scrollbarVisible?: boolean,
-                showOnRight?: boolean,
-                renderXAxis?: boolean,
-                renderY1Axis?: boolean,
-                renderY2Axis?: boolean): IMargin {
-
-                debug.assertValue(viewport, 'viewport');
-
-                debug.assertValue(axes, 'axes');
-                let xAxisProperties: IAxisProperties = axes.x;
-                let y1AxisProperties: IAxisProperties = axes.y1;
-                let y2AxisProperties: IAxisProperties = axes.y2;
-                debug.assertValue(xAxisProperties, 'xAxis');
-                debug.assertValue(y1AxisProperties, 'yAxis');
-
-                let xLabels = xAxisProperties.values;
-                let y1Labels = y1AxisProperties.values;
-
-                let margin: IMargin = {
-                    top: 0,
-                    left: 0,
-                    bottom: 0,
-                    right: 0,
-                };
-
-                let leftOverflow = 0;
-                let rightOverflow = 0;
-                let maxWidthY1 = 0;
-                let maxWidthY2 = 0;
-                let bottomMargin = 0;
-
-                // TODO: using outerPadding to indicate lineChart - we need a better way to indicate whether the label has a rectangle or point as a marker
-                // half-category width is extra space only caused by rectangles being used to plot a category position, line charts don't have this.
-                let labelOffset = xAxisProperties.outerPadding && xAxisProperties.categoryThickness ? xAxisProperties.categoryThickness / 2 : 0;
-
-                let xLabelOuterPadding = 0;
-                if (xAxisProperties.outerPadding != null) {
-                    xLabelOuterPadding = xAxisProperties.outerPadding;
-                }
-                else if (xAxisProperties.xLabelMaxWidth != null) {
-                    xLabelOuterPadding = Math.max(0, (viewport.width - (xAxisProperties.xLabelMaxWidth * xLabels.length)) / 2);
-                }
-
-                if (AxisHelper.getRecommendedNumberOfTicksForXAxis(viewport.width) !== 0
-                    || AxisHelper.getRecommendedNumberOfTicksForYAxis(viewport.height) !== 0) {
-                    let layoutStrategy;
-                    if (scrollbarVisible)
-                        layoutStrategy = AxisHelper.LabelLayoutStrategy.DefaultRotationWithScrollbar;
-                    else
-                        layoutStrategy = AxisHelper.LabelLayoutStrategy.DefaultRotation;
-
-                    if (renderY1Axis) {
-                        maxWidthY1 = y1AxisProperties.maxLabelWidth;
-                    }
-
-                    if (y2AxisProperties && renderY2Axis) {
-                        maxWidthY2 = y2AxisProperties.maxLabelWidth;
-                    }
-
-                    let maxNumLines = Math.floor(marginLimits.bottom / textHeight);
-                    if (renderXAxis && xLabels.length > 0) {
-                        for (let i = 0, len = xLabels.length; i < len; i++) {
-                            let height: number;
-                            properties.text = xLabels[i];
-                            let width = textWidthMeasurer(properties);
-                            if (xAxisProperties.willLabelsWordBreak && AxisHelper.isOrdinal(xAxisProperties.axisType)) {
-                                // Split label and count rows
-                                let wordBreaks = jsCommon.WordBreaker.splitByWidth(properties.text, properties, textWidthMeasurer, xAxisProperties.xLabelMaxWidth, maxNumLines);
-                                height = wordBreaks.length * textHeight;
-                            }
-                            else if (!xAxisProperties.willLabelsFit) {
-                                height = width * layoutStrategy.sine;
-                                width = width * layoutStrategy.cosine;
-                            }
-                            else {
-                                height = textHeight;
-                            }
-
-                            // Account for wide X label (Note: no right overflow when rotated)
-                            let overflow = 0;
-                            if (i === 0) {
-                                if (!xAxisProperties.willLabelsFit /*rotated text*/)
-                                    overflow = width - labelOffset - xLabelOuterPadding;
-                                else
-                                    overflow = (width / 2) - labelOffset - xLabelOuterPadding;
-                                leftOverflow = Math.max(leftOverflow, overflow);
-                            } else if (i === len - 1 && xAxisProperties.willLabelsFit) {
-                                // if we are rotating text (!willLabelsFit) there won't be any right overflow
-                                overflow = (width / 2) - labelOffset - xLabelOuterPadding;
-                                rightOverflow = Math.max(rightOverflow, overflow);
-                            }
-
-                            bottomMargin = Math.max(bottomMargin, height);
-                        }
-                        // trim any actual overflow to the limit
-                        leftOverflow = Math.min(leftOverflow, constants.XLabelMaxAllowedOverflow);
-                        rightOverflow = Math.min(rightOverflow, constants.XLabelMaxAllowedOverflow);
-                    }
-                }
-
-                let rightMargin = 0,
-                    leftMargin = 0;
-
-                bottomMargin = Math.min(Math.ceil(bottomMargin), marginLimits.bottom);
-
-                if (showOnRight) {
-                    leftMargin = Math.min(Math.max(leftOverflow, maxWidthY2), marginLimits.left);
-                    rightMargin = Math.min(Math.max(rightOverflow, maxWidthY1), marginLimits.right);
-                }
-                else {
-                    leftMargin = Math.min(Math.max(leftOverflow, maxWidthY1), marginLimits.left);
-                    rightMargin = Math.min(Math.max(rightOverflow, maxWidthY2), marginLimits.right);
-                }
-
-                return {
-                    top: 0,
-                    bottom: Math.ceil(bottomMargin),
-                    left: Math.ceil(leftMargin),
-                    right: Math.ceil(rightMargin),
-                };
-            }
-            
-            private shouldRenderSecondaryAxis(dataModel: models.CartesianAxesData, axisProperties: IAxisProperties): boolean {
-                return dataModel.showY2Axis && !_.isEmpty(axisProperties.values);
-            }
-
-            private shouldRenderAxis(dataModel: models.CartesianAxesData, axisProperties: IAxisProperties): boolean {
-                if (axisProperties.isCategoryAxis)
-                    return dataModel.showCategoryAxis && !_.isEmpty(axisProperties.values);
-                else
-                    return dataModel.showY1Axis && !_.isEmpty(axisProperties.values);
+            public visitLayers(layers: ICartesianLayer[]): void {
+                new AxesNegotiator(layers).negotiate(this.dataModel);
             }
 
             private buildViewModel(model: models.CartesianAxesData, bbox: BoundingBox): viewModels.CartesianAxesViewModel {
@@ -1070,117 +757,214 @@ module powerbi.visuals.experimental {
                 this.layers = layers;
             }
 
-            /** 
-             * Computes the Cartesian Chart axes from the set of layers.
-             */
-            public calculateAxes(
-                visualOptions: CalculateScaleAndDomainOptions,
-                dataModel: models.CartesianAxesData,
-                textProperties: TextProperties,
-                scrollbarVisible: boolean,
-                existingAxisProperties: CartesianAxisProperties): CartesianAxisProperties {
-
-                let skipMerge = dataModel.showY2Axis;
-                let yAxisWillMerge = false;
-                let mergeResult: MergedValueAxisResult;
-                if (this.hasMultipleYAxes(this.layers) && !skipMerge) {
-                    mergeResult = this.tryMergeYDomains(this.layers, visualOptions);
-                    yAxisWillMerge = mergeResult.merged;
-                    if (yAxisWillMerge) {
-                        visualOptions.forcedYDomain = mergeResult.domain;
-                    }
-                    else {
-                        visualOptions.forcedTickCount = mergeResult.tickCount;
-                    }
-                }
-
-                if (dataModel.forcedY1Domain) {
-                    visualOptions.forcedYDomain = AxisHelper.applyCustomizedDomain(dataModel.forcedY1Domain, visualOptions.forcedYDomain);
-                }
-
+            public negotiate(dataModel: models.CartesianAxesData): CartesianAxisProperties {
                 let result: CartesianAxisProperties;
-                for (let layerNumber = 0, len = this.layers.length; layerNumber < len; layerNumber++) {
-                    let currentlayer = this.layers[layerNumber];
 
-                    if (layerNumber === 1 && !yAxisWillMerge) {
-                        visualOptions.forcedYDomain = dataModel.forcedY2Domain.toArray();
-                        visualOptions.valueAxisScaleType = dataModel.y2AxisScaleType;
-                        if (mergeResult && mergeResult.forceStartToZero) {
-                            if (!visualOptions.forcedYDomain) {
-                                visualOptions.forcedYDomain = [0, undefined];
-                            }
-                            else if (visualOptions.forcedYDomain[0] == null) {
-                                visualOptions.forcedYDomain[0] = 0;//only set when user didn't choose a value
-                            }
+                let mergedAxes = {
+                    x: <MergedAxisProperties>undefined,
+                    y1: <MergedAxisProperties>undefined,
+                    y2: <MergedAxisProperties>undefined,
+                };
+
+                let valueAxesTickCount = 0;
+                let valueDomainPositive = true;
+                for (let layer of this.layers) {
+                    let xDomain = layer.getXDomain();
+                    let xValues = layer.getXValues();
+                    if (xDomain && mergedAxes.x == null) {
+                        mergedAxes.x = {
+                            domain: xDomain,
+                            merged: false,
+                            //tickCount: xValues.length,
                         }
                     }
-                    visualOptions.showCategoryAxisLabel = dataModel.showCategoryAxisTitle;
 
-                    visualOptions.showValueAxisLabel = this.shouldShowYAxisLabel(layerNumber, dataModel, yAxisWillMerge);
-
-                    let axes = currentlayer.calculateAxesProperties(visualOptions);
-
-                    if (layerNumber === 0) {
-                        result = {
-                            x: axes[0],
-                            y1: axes[1]
-                        };
-                    }
-                    else if (axes && !result.y2) {
-                        if (axes[0].axis.scale().domain().length > result.x.axis.scale().domain().length) {
-                            visualOptions.showValueAxisLabel = dataModel.showValueAxisTitle;
-
-                            let axes = currentlayer.calculateAxesProperties(visualOptions);
-                            // no categories returned for the first layer, use second layer x-axis properties
-                            result.x = axes[0];
-                            // and 2nd value axis to be the primary
-                            result.y1 = axes[1];
+                    let yDomain = layer.getYDomain();
+                    let yValues = layer.getYValues();
+                    valueAxesTickCount = Math.max(valueAxesTickCount, yValues.length);
+                    valueDomainPositive = valueDomainPositive && (yDomain.min >= 0);
+                    if (yDomain) {
+                        if (mergedAxes.y1 == null) {
+                            mergedAxes.y1 = {
+                                domain: yDomain,
+                                merged: false,
+                                //tickCount: yValues.length,
+                            }
                         }
                         else {
-                            // make sure all layers use the same x-axis/scale for drawing
-                            currentlayer.overrideXScale(result.x);
-                            if (!yAxisWillMerge && !axes[1].usingDefaultDomain)
-                                result.y2 = axes[1];
+                            let mergedAxis = this.tryMergeAxes(mergedAxes.y1, yDomain, yValues, dataModel.forceValueAxisMerge);
+                            if (mergedAxis.merged) {
+                                mergedAxes.y1 = mergedAxis
+                                // TODO: max tick count here?
+                                // TODO: force axis min to 0?
+                            }
+                            else {
+                                // TODO: what if we already have y2? attempt to merge again?
+                                mergedAxes.y2 = mergedAxis
+                            }
+                            // TODO: set showY2Axis?
                         }
-                    }
-
-                    if (existingAxisProperties && existingAxisProperties.x) {
-                        result.x.willLabelsFit = existingAxisProperties.x.willLabelsFit;
-                        result.x.willLabelsWordBreak = existingAxisProperties.x.willLabelsWordBreak;
-                    } else {
-                        let viewport = visualOptions.viewport;
-                        let margin = visualOptions.margin;
-                        let width = viewport.width - (margin.left + margin.right);
-                        result.x.willLabelsFit = AxisHelper.LabelLayoutStrategy.willLabelsFit(
-                            result.x,
-                            width,
-                            TextMeasurementService.measureSvgTextWidth,
-                            textProperties);
-
-                        // If labels do not fit and we are not scrolling, try word breaking
-                        result.x.willLabelsWordBreak = (!result.x.willLabelsFit && !scrollbarVisible) && AxisHelper.LabelLayoutStrategy.willLabelsWordBreak(
-                            result.x,
-                            margin,
-                            width,
-                            TextMeasurementService.measureSvgTextWidth,
-                            TextMeasurementService.estimateSvgTextHeight,
-                            TextMeasurementService.getTailoredTextOrDefault,
-                            textProperties);
                     }
                 }
 
-                return result;
+                //if (yAxisWillMerge) {
+                //    //let mergedY1Domain = new Domain(mergeResult.domain[0], mergeResult.domain[1]);
+                //    dataModel.forcedY1Domain = Domain.fromArray(AxisHelper.applyCustomizedDomain(dataModel.forcedY1Domain, mergedValueAxis.domain))
+                //}
+
+                for (let layerIndex = 0; layerIndex < this.layers.length; layerIndex++) {
+                    let layer = this.layers[layerIndex];
+
+                    let valueAxisDomain: Domain;
+                    let valueScaleType: string;
+                    let showValueAxisLabel: boolean;
+                    if (layerIndex > 0 && !yAxisWillMerge) {
+                        // use Y2 axis
+                        valueAxisDomain = dataModel.forcedY2Domain || new Domain();
+                        valueScaleType = dataModel.y2AxisScaleType;
+                        if (forceValueAxisStartToZero) {
+                            valueAxisDomain.min = 0;
+                        }
+                        showValueAxisLabel = dataModel.secShowValueAxisTitle;
+                    }
+                    else {
+                        // use Y1 axis
+                        valueAxisDomain = dataModel.forcedY1Domain || new Domain();
+                        valueScaleType = dataModel.y1AxisScaleType;
+                        showValueAxisLabel = dataModel.showValueAxisTitle;
+                    }
+
+                    let showCategoryAxisLabel = dataModel.showCategoryAxisTitle;
+
+                    let axesProperties = layer.getAxesProperties();
+
+                    if (layerIndex === 0) {
+                        result = {
+                            x: axesProperties[0],
+                            y1: axesProperties[1],
+                        }
+                    }
+                    else {
+
+                    }
+                }
             }
 
-            private hasMultipleYAxes(layers: ICartesianLayer[]): boolean {
-                debug.assertValue(layers, 'layers');
-
-                return layers.length > 1;
+            private allDomainsPositive(domains: Domain[]): boolean {
+                return _.all(domains, (domain) => domain.min >= 0);
             }
 
-            private shouldShowYAxisLabel(layerNumber: number, dataModel: models.CartesianAxesData, yAxisWillMerge: boolean): boolean {
-                return ((layerNumber === 0 && dataModel.showValueAxisTitle) ||
-                    (layerNumber === 1 && !yAxisWillMerge && dataModel.secShowValueAxisTitle));
+            private tryMergeAxes(existingAxis: MergedAxisProperties, domain: Domain, values: number[], forceMerge: boolean): MergedAxisProperties {
+                let merged: MergedAxisProperties = {
+                    domain: existingAxis.domain,
+                    merged: false,
+                    //tickCount: existingAxis.tickCount,
+                };
+
+                // Why modify this when not merging?
+                //merged.tickCount = Math.max(merged.tickCount, values.length);
+
+                let mergedDomain = Domain.maxExtents([existingAxis.domain, domain]);
+
+                if (!forceMerge) {
+                    // Attempt to merge
+                    let range = mergedDomain.range();
+                    if (range === 0) {
+                        // TODO: weird...
+                        return merged;
+                    }
+
+                    let intersection = Domain.intersect([existingAxis.domain, domain]);
+                    let overlapPct = intersection.range() / range;
+
+                    // Only merge if intersection of domains greater than 10% of total range.
+                    if (overlapPct < constants.MinOverlapPctToMergeValueAxes)
+                        return merged;
+                }
+
+                return {
+                    domain: mergedDomain,
+                    merged: true,
+                    //tickCount: merged.tickCount,
+                };
+            }
+
+            // TODO: ensure this is correct behavior
+            private tryMergeDomains(domains: Domain[], values: number[][], forceMerge: boolean): MergedValueAxisResult {
+                //debug.assert(layers.length < 3, 'merging of more than 2 layers is not supported');
+
+                let merged: MergedValueAxisResult = {
+                    domain: undefined,
+                    merged: false,
+                    tickCount: undefined,
+                    // TODO: remove
+                    forceStartToZero: false
+                };
+
+                if (domains.length < 2)
+                    return merged;
+
+                //let min: number;
+                //let max: number;
+                //let minOfMax: number;
+                //let maxOfMin: number;
+
+                // TODO: replace full calculateAxesProperties with just a data domain calc
+                // we need to be aware of which chart require zero (column/bar) and which don't (line)
+                //let domains: Domain[] = _.map(layers, (layer) => layer.getYDomain());
+
+                //let y1props = layers[0].calculateAxesProperties(visualOptions)[1];
+                //let y2props = layers[1].calculateAxesProperties(visualOptions)[1];
+                //let firstYDomain = y1props.scale.domain();
+                //let secondYDomain = y2props.scale.domain();
+
+                //if (_.all(domains, (domain) => domain.min >= 0)) {
+                //    // TODO: better name for this? clamped to >= 0?
+                //    merged.forceStartToZero = true;
+                //}
+
+                //if (firstYDomain[0] >= 0 && secondYDomain[0] >= 0) {
+                //    noMerge.forceStartToZero = true;
+                //}
+                merged.tickCount = _.max(_.map(values, (layer) => layer.length));
+
+                //if (y1props.values && y1props.values.length > 0 && y2props.values && y2props.values.length > 0) {
+                //    merged.tickCount = Math.max(y1props.values.length, y2props.values.length);
+                //}
+
+                let mergedDomain = Domain.maxExtents(domains);
+                //min = Math.min(firstYDomain[0], secondYDomain[0]);
+                //max = Math.max(firstYDomain[1], secondYDomain[1]);
+
+                if (!forceMerge) {
+
+                    // If domains don't intersect don't merge axis.
+                    //if (firstYDomain[0] > secondYDomain[1] || firstYDomain[1] < secondYDomain[0])
+                    //    return noMerge;
+
+                    //maxOfMin = Math.max(firstYDomain[0], secondYDomain[0]);
+                    //minOfMax = Math.min(firstYDomain[1], secondYDomain[1]);
+
+                    let range = mergedDomain.range();
+                    if (range === 0) {
+                        return merged;
+                    }
+
+                    let intersection = Domain.intersect(domains);
+                    let overlapPct = intersection.range() / range;
+                    //let intersection = Math.abs((minOfMax - maxOfMin) / range);
+
+                    // Only merge if intersection of domains greater than 10% of total range.
+                    if (overlapPct < constants.MinOverlapPctToMergeValueAxes)
+                        return merged;
+                }
+
+                return {
+                    domain: mergedDomain.toArray(),
+                    merged: true,
+                    tickCount: merged.tickCount,
+                    forceStartToZero: false
+                };
             }
         }
 

@@ -18,7 +18,7 @@ module powerbi.visuals.experimental {
         }
 
         convert(
-            dataView: DataView,
+            dataViews: DataView[],
             colorPalette: IDataColorPalette,
             formatString: string,
             defaultDataPointColor: string

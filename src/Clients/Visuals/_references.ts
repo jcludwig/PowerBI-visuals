@@ -182,5 +182,13 @@
 /// <reference path="visuals/samples/dotPlot.ts"/>
 /// <reference path="visuals/samples/sunburst.ts"/>
 
+/// <reference path="visuals/experimental/cartesianAxes.ts"/>
+/// <reference path="visuals/experimental/dataView.ts"/>
+/// <reference path="visuals/experimental/IRenderer.ts"/>
+/// <reference path="visuals/experimental/IVisualComponent.ts"/>
+/// <reference path="visuals/experimental/layoutManager.ts"/>
+/// <reference path="visuals/experimental/legend.ts"/>
+/// <reference path="visuals/experimental/scatterPrototype.ts"/>
+
 /// <reference path="visuals/histogram.ts"/>
 /// <reference path="plugins.ts"/>

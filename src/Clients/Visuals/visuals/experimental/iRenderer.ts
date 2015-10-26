@@ -91,8 +91,14 @@ module powerbi.visuals.experimental {
             //});
         }
 
-        public getElement(): D3.Selection {
-            return this.svg;
+        public getElement(selector: jsCommon.CssConstants.ClassAndSelector): D3.Selection {
+            // TODO: this should probably be something like: createNewClippedRegion()
+            // Need to be careful about nesting too many svg...
+            let selection = this.svg.select(selector.selector);
+            if (selection.empty()) {
+                selection = selection.append('svg').classed(selector.class, true);
+            }
+            return selection;
         }
     }
 

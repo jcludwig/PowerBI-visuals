@@ -32,7 +32,7 @@ module powerbi.visuals.experimental {
 
     export interface IVisualComponent {
         init(options: VisualInitOptions): void;
-        setData(dataView: DataView): void;
+        setData(dataViews: DataView[]): void;
         layout(boundingBox: BoundingBox): SceneGraphNode;
         //render(): SceneGraphNode;
     }
